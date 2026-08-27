@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <!-- iOS 專屬 Viewport 設定：禁止縮放、適應瀏海 (viewport-fit=cover) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
+    <!-- Apple PWA 專屬標籤 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="股票計算機">
+    
+    <title>智慧型股票買賣計算器</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        /* 取消 iOS 點擊時的灰色高光，讓按鈕更像原生 App */
+        * { -webkit-tap-highlight-color: transparent; }
+        button, select { -webkit-user-select: none; user-select: none; }
+        /* 處理 iPhone 瀏海與底部安全邊距 */
+        body {
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased overscroll-none">
+
+    <div class="max-w-6xl mx-auto px-3 sm:px-4 py-4 sm:py-8">
+        <!-- 頁面標題與頂部功能按鈕 -->
+        <header class="mb-6 sm:mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+                <h1 class="text-2xl sm:text-3xl font-bold text-slate-900 mb-1 tracking-tight">📈 智慧型股票買賣計算器</h1>
+                <p class="text-slate-600 text-xs sm:text-sm">支援手機與電腦，完整記錄買賣、手續費、稅率與加碼模擬</p>
+            </div>
+            <div class="flex flex-wrap gap-2 w-full md:w-auto">
+                <button onclick="exportData()" class="flex-1 md:flex-initial bg-slate-800 hover:bg-slate-900 text-white px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition shadow-sm flex items-center justify-center gap-1">
+                    💾 匯出
+                </button>
+                <label class="flex-1 md:flex-initial bg-slate-700 hover:bg-slate-800 text-white px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition shadow-sm cursor-pointer flex items-center justify-center gap-1">
+                    📂 匯入
+                    <input type="file" id="importFile" accept=".json" onchange="importData(event)" class="hidden">
+                </label>
+                <button onclick="clearAllData()" class="flex-1 md:flex-initial bg-rose-600 hover:bg-rose-700 text-white px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition shadow-sm flex items-center justify-center gap-1">
+                    🗑️ 重設
+                </button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
+            <!-- 左側：輸入與操作面板 (占 2 欄) -->
+            <div class="lg:col-span-2 space-y-6">
+                
+                <!-- 股票基本設定與代碼查詢 -->
+                <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <h2 class="text-lg sm:text-xl font-semibold text-slate-900 mb-4">1. 股票基本資訊與手續費設定</h2>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 items-end mb-4">
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs sm:text-sm font-medium text-slate-700 mb-1">股票代碼 / 名稱</label>
+                            <input type="text" id="stockSymbol" value="2489 瑞軒" placeholder="例如: 2489 或 2330" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <button onclick="fetchMarketPrice()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition shadow-sm flex items-center justify-center gap-2">
+                                🔄 查詢市價
+                            </button>
+                        </div>
+                    </div>
+                    <p id="fetchStatus" class="text-xs text-slate-500 mb-4">提示：若連線受阻可直接於下方手動輸入最新市價</p>
+
+                    <!-- 手續費與交易稅率設定 -->
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 pt-4 border-t border-slate-100">
+                        <div>
+                            <label class="block text-xs sm:text-sm font-medium text-slate-700 mb-1">手續費率 (%)</label>
+                            <input type="number" id="feeRate" value="0.1425" step="0.0001" inputmode="decimal" oninput="calculateAll()" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs sm:text-sm font-medium text-slate-700 mb-1">手續費折扣 (折)</label>
+                            <input type="number" id="feeDiscount" value="0.6" step="0.05" inputmode="decimal" oninput="calculateAll()" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="例如: 0.6">
+                        </div>
+                        <div>
+                            <label class="block text-xs sm:text-sm font-medium text-slate-700 mb-1">證券交易稅率 (%)</label>
+                            <input type="number" id="taxRate" value="0.3" step="0.01" inputmode="decimal" oninput="calculateAll()" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="一般 0.3%">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 交易紀錄區塊 -->
+                <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg sm:text-xl font-semibold text-slate-900">2. 交易紀錄</h2>
+                        <button onclick="addTransaction()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition duration-200 shadow-sm">
+                            + 新增紀錄
+                        </button>
+                    </div>
+
+                    <div class="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                        <table class="w-full text-left border-collapse min-w-[500px]">
+                            <thead>
+                                <tr class="border-b border-slate-200 text-slate-500 text-xs sm:text-sm">
+                                    <th class="py-2.5 px-2">類型</th>
+                                    <th class="py-2.5 px-2">股數 (股)</th>
+                                    <th class="py-2.5 px-2">價格 ($)</th>
+                                    <th class="py-2.5 px-2">含費總額</th>
+                                    <th class="py-2.5 px-2">已實現損益</th>
+                                    <th class="py-2.5 px-2 text-center">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="transactionTableBody">
+                                <!-- 動態生成行 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 手機版專屬：將持倉數據摘要與圖表移到交易紀錄下方 (Order: lg:order-none) -->
+                <div class="block lg:hidden space-y-6">
+                    <!-- 數據摘要卡片 -->
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+                        <h2 class="text-lg font-semibold text-slate-900">📊 持倉數據摘要</h2>
+                        
+                        <div>
+                            <label class="block text-xs font-medium text-slate-700 mb-1">目前市場市價 ($)</label>
+                            <input type="number" id="currentMarketPriceMob" value="27.7" step="0.05" inputmode="decimal" oninput="syncMarketPrice('mob')" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                <span class="block text-[11px] text-slate-500">目前持股數</span>
+                                <span id="totalSharesMob" class="text-base font-bold text-slate-900">0 股</span>
+                            </div>
+                            <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                <span class="block text-[11px] text-slate-500">持倉總成本 (含費)</span>
+                                <span id="totalCostMob" class="text-base font-bold text-slate-900">$0</span>
+                            </div>
+                        </div>
+
+                        <div class="bg-indigo-600 text-white p-4 rounded-xl shadow-sm">
+                            <span class="block text-xs text-indigo-200">現有成本均價 (含手續費平均)</span>
+                            <span id="avgPriceMob" class="text-xl font-black">$0.00</span>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                <span class="block text-[11px] text-slate-500">已實現損益</span>
+                                <span id="realizedPLMob" class="text-xs font-bold text-slate-700">$0</span>
+                            </div>
+                            <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                <span class="block text-[11px] text-slate-500">未實現損益 (扣費稅)</span>
+                                <span id="unrealizedPLMob" class="text-xs font-bold text-slate-700">$0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 均價走勢圖表 -->
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                        <h2 class="text-lg font-semibold text-slate-900 mb-4">📈 均價走勢圖</h2>
+                        <div class="relative h-56">
+                            <canvas id="costChartMob"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 模擬加碼與目標區塊 -->
+                <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <h2 class="text-lg sm:text-xl font-semibold text-slate-900 mb-4">3. 加碼與賣出情境模擬</h2>
+                    
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-4">
+                        <div>
+                            <label class="block text-xs sm:text-sm font-medium text-slate-700 mb-1">預計加碼價格 ($)</label>
+                            <input type="number" id="simAddPrice" value="27" step="0.05" inputmode="decimal" oninput="calculateAll()" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs sm:text-sm font-medium text-slate-700 mb-1">預計加碼股數 (股)</label>
+                            <input type="number" id="simAddShares" value="1000" step="100" inputmode="numeric" oninput="calculateAll()" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs sm:text-sm font-medium text-slate-700 mb-1">預期賣出價格 ($)</label>
+                            <input type="number" id="targetSellPrice" value="30" step="0.05" inputmode="decimal" oninput="calculateAll()" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        </div>
+                    </div>
+
+                    <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-3 sm:p-4 text-indigo-900 space-y-2 text-xs sm:text-sm">
+                        <p id="addSimulationText" class="font-medium">✨ 加碼模擬：計算中...</p>
+                        <p id="sellSimulationText">💡 賣出情境預期損益：計算中...</p>
+                    </div>
+                </div>
+
+                <!-- 4. 估算應買股數 -->
+                <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <h2 class="text-lg sm:text-xl font-semibold text-slate-900 mb-4">4. 估算應買股數 (損益兩平)</h2>
+                    
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-4">
+                        <div>
+                            <label class="block text-xs sm:text-sm font-medium text-slate-700 mb-1">目標均價 ($)</label>
+                            <input type="number" id="targetBreakEvenPrice" value="25" step="0.05" inputmode="decimal" oninput="calculateAll()" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs sm:text-sm font-medium text-slate-700 mb-1">預計買入價格 ($)</label>
+                            <input type="number" id="targetBuyPrice" value="22.5" step="0.05" inputmode="decimal" oninput="calculateAll()" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        </div>
+                    </div>
+
+                    <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-3 sm:p-4 text-emerald-900 text-xs sm:text-sm">
+                        <p id="breakEvenSimulationText" class="font-medium">🎯 應買股數試算：計算中...</p>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- 右側：電腦版專屬的數據摘要與視覺化圖表 (螢幕 >= 1024px 顯示) -->
+            <div class="hidden lg:block space-y-6">
+                <!-- 數據摘要卡片 -->
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+                    <h2 class="text-xl font-semibold text-slate-900">📊 持倉數據摘要</h2>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">目前市場市價 ($)</label>
+                        <input type="number" id="currentMarketPriceDesk" value="27.7" step="0.05" inputmode="decimal" oninput="syncMarketPrice('desk')" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-base font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                            <span class="block text-[11px] text-slate-500">目前持股數</span>
+                            <span id="totalSharesDesk" class="text-lg font-bold text-slate-900">0 股</span>
+                        </div>
+                        <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                            <span class="block text-[11px] text-slate-500">持倉總成本 (含費)</span>
+                            <span id="totalCostDesk" class="text-lg font-bold text-slate-900">$0</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-indigo-600 text-white p-4 rounded-xl shadow-sm">
+                        <span class="block text-xs text-indigo-200">現有成本均價 (含手續費平均)</span>
+                        <span id="avgPriceDesk" class="text-2xl font-black">$0.00</span>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                            <span class="block text-[11px] text-slate-500">已實現損益</span>
+                            <span id="realizedPLDesk" class="text-sm font-bold text-slate-700">$0</span>
+                        </div>
+                        <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                            <span class="block text-[11px] text-slate-500">未實現損益 (扣費稅)</span>
+                            <span id="unrealizedPLDesk" class="text-sm font-bold text-slate-700">$0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 均價趨勢圖表 -->
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <h2 class="text-xl font-semibold text-slate-900 mb-4">📈 均價走勢圖</h2>
+                    <div class="relative h-64">
+                        <canvas id="costChartDesk"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript 邏輯 -->
+    <script>
+        let chartInstanceDesk = null;
+        let chartInstanceMob = null;
+
+        let transactions = [
+            { type: 'buy', shares: 2000, price: 22.5 },
+            { type: 'buy', shares: 4000, price: 23.0 }
+        ];
+
+        window.onload = function() {
+            renderTable();
+            calculateAll();
+        };
+
+        // 同步手機與電腦版的市價輸入框
+        function syncMarketPrice(source) {
+            const val = source === 'mob' ? document.getElementById('currentMarketPriceMob').value : document.getElementById('currentMarketPriceDesk').value;
+            document.getElementById('currentMarketPriceMob').value = val;
+            document.getElementById('currentMarketPriceDesk').value = val;
+            calculateAll();
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('transactionTableBody');
+            tbody.innerHTML = '';
+
+            const feeRate = parseFloat(document.getElementById('feeRate').value) / 100 || 0.001425;
+            const feeDiscount = parseFloat(document.getElementById('feeDiscount').value) || 1.0;
+
+            transactions.forEach((tx, index) => {
+                const rawAmount = tx.shares * tx.price;
+                const fee = Math.max(1, Math.round(rawAmount * feeRate * feeDiscount));
+                const totalAmount = tx.type === 'buy' ? rawAmount + fee : rawAmount - fee;
+
+                const tr = document.createElement('tr');
+                tr.className = 'border-b border-slate-100 hover:bg-slate-50 transition text-xs sm:text-sm';
+                
+                tr.innerHTML = `
+                    <td class="py-3 px-2">
+                        <select onchange="updateData(${index}, 'type', this.value)" class="px-2 py-1.5 border border-slate-300 rounded-lg font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500 ${tx.type === 'buy' ? 'text-emerald-600' : 'text-rose-600'}">
+                            <option value="buy" ${tx.type === 'buy' ? 'selected' : ''}>買入</option>
+                            <option value="sell" ${tx.type === 'sell' ? 'selected' : ''}>賣出</option>
+                        </select>
+                    </td>
+                    <td class="py-3 px-2">
+                        <input type="number" inputmode="numeric" value="${tx.shares}" onchange="updateData(${index}, 'shares', this.value)" class="w-16 sm:w-20 px-2 py-1.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    </td>
+                    <td class="py-3 px-2">
+                        <input type="number" inputmode="decimal" value="${tx.price}" step="0.05" onchange="updateData(${index}, 'price', this.value)" class="w-16 sm:w-20 px-2 py-1.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    </td>
+                    <td class="py-3 px-2 text-slate-600 font-medium">$${Math.round(totalAmount).toLocaleString()} <span class="text-[10px] text-slate-400 block">(${tx.type === 'buy' ? '含' : '扣'} $${fee})</span></td>
+                    <td class="py-3 px-2 font-medium" id="row-realized-${index}">-</td>
+                    <td class="py-3 px-2 text-center">
+                        <button onclick="deleteTransaction(${index})" class="text-rose-500 hover:text-rose-700 font-medium px-2 py-1 rounded">刪除</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function addTransaction() {
+            const lastPrice = transactions.length > 0 ? transactions[transactions.length - 1].price : 25;
+            transactions.push({ type: 'buy', shares: 1000, price: lastPrice });
+            renderTable();
+            calculateAll();
+        }
+
+        function deleteTransaction(index) {
+            if (transactions.length <= 1) {
+                alert('至少需保留一筆交易紀錄！');
+                return;
+            }
+            transactions.splice(index, 1);
+            renderTable();
+            calculateAll();
+        }
+
+        function updateData(index, field, value) {
+            if (field === 'type') {
+                transactions[index][field] = value;
+            } else {
+                transactions[index][field] = parseFloat(value) || 0;
+            }
+            renderTable();
+            calculateAll();
+        }
+
+        async function fetchMarketPrice() {
+            const symbolInput = document.getElementById('stockSymbol').value.trim();
+            const statusEl = document.getElementById('fetchStatus');
+            
+            const match = symbolInput.match(/^(\d+)/);
+            if (!match) {
+                alert('請輸入正確的台股代碼格式（例如：2489）');
+                return;
+            }
+            const stockId = match[1];
+            statusEl.innerText = `正在查詢 ${stockId} 即時市價...`;
+            statusEl.className = "text-xs text-indigo-600 mt-1 font-medium";
+
+            try {
+                const res = await fetch(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${stockId}.tw`);
+                const data = await res.json();
+                
+                if (data && data.msgArray && data.msgArray.length > 0) {
+                    const info = data.msgArray[0];
+                    const latestPrice = parseFloat(info.z) || parseFloat(info.y) || 0;
+                    if (latestPrice > 0) {
+                        document.getElementById('currentMarketPriceMob').value = latestPrice;
+                        document.getElementById('currentMarketPriceDesk').value = latestPrice;
+                        statusEl.innerText = `✅ 成功取得市價：$${latestPrice}`;
+                        statusEl.className = "text-xs text-emerald-600 mt-1 font-medium";
+                        calculateAll();
+                        return;
+                    }
+                }
+                throw new Error("無法解析");
+            } catch (err) {
+                statusEl.innerText = `⚠️ 瀏覽器安全性限制無法自動抓取，請直接手動輸入市價。`;
+                statusEl.className = "text-xs text-amber-600 mt-1 font-medium";
+            }
+        }
+
+        function exportData() {
+            const dataToExport = {
+                stockSymbol: document.getElementById('stockSymbol').value,
+                currentMarketPrice: document.getElementById('currentMarketPriceMob').value,
+                feeRate: document.getElementById('feeRate').value,
+                feeDiscount: document.getElementById('feeDiscount').value,
+                taxRate: document.getElementById('taxRate').value,
+                simAddPrice: document.getElementById('simAddPrice').value,
+                simAddShares: document.getElementById('simAddShares').value,
+                targetSellPrice: document.getElementById('targetSellPrice').value,
+                targetBreakEvenPrice: document.getElementById('targetBreakEvenPrice').value,
+                targetBuyPrice: document.getElementById('targetBuyPrice').value,
+                transactions: transactions
+            };
+            
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dataToExport, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", `stock_calc.json`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+        }
+
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    if (imported.stockSymbol) document.getElementById('stockSymbol').value = imported.stockSymbol;
+                    if (imported.currentMarketPrice) {
+                        document.getElementById('currentMarketPriceMob').value = imported.currentMarketPrice;
+                        document.getElementById('currentMarketPriceDesk').value = imported.currentMarketPrice;
+                    }
+                    if (imported.feeRate) document.getElementById('feeRate').value = imported.feeRate;
+                    if (imported.feeDiscount) document.getElementById('feeDiscount').value = imported.feeDiscount;
+                    if (imported.taxRate) document.getElementById('taxRate').value = imported.taxRate;
+                    if (imported.simAddPrice) document.getElementById('simAddPrice').value = imported.simAddPrice;
+                    if (imported.simAddShares) document.getElementById('simAddShares').value = imported.simAddShares;
+                    if (imported.targetSellPrice) document.getElementById('targetSellPrice').value = imported.targetSellPrice;
+                    if (imported.targetBreakEvenPrice) document.getElementById('targetBreakEvenPrice').value = imported.targetBreakEvenPrice;
+                    if (imported.targetBuyPrice) document.getElementById('targetBuyPrice').value = imported.targetBuyPrice;
+                    if (imported.transactions && Array.isArray(imported.transactions)) {
+                        transactions = imported.transactions;
+                    }
+                    renderTable();
+                    calculateAll();
+                    alert('📂 匯入成功！');
+                } catch (err) {
+                    alert('❌ 格式錯誤');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function clearAllData() {
+            if (confirm('確定要清空所有紀錄嗎？')) {
+                transactions = [{ type: 'buy', shares: 1000, price: 25 }];
+                document.getElementById('stockSymbol').value = '';
+                document.getElementById('currentMarketPriceMob').value = '27.7';
+                document.getElementById('currentMarketPriceDesk').value = '27.7';
+                renderTable();
+                calculateAll();
+            }
+        }
+
+        function calculateAll() {
+            let currentShares = 0;
+            let totalCost = 0;
+            let totalRealizedPL = 0;
+
+            const feeRate = parseFloat(document.getElementById('feeRate').value) / 100 || 0.001425;
+            const feeDiscount = parseFloat(document.getElementById('feeDiscount').value) || 1.0;
+            const taxRate = parseFloat(document.getElementById('taxRate').value) / 100 || 0.003;
+
+            let chartLabels = [];
+            let chartData = [];
+
+            transactions.forEach((tx, index) => {
+                let rowRealizedPLText = '-';
+                let rawAmount = tx.shares * tx.price;
+                let fee = Math.max(1, Math.round(rawAmount * feeRate * feeDiscount));
+
+                if (tx.type === 'buy') {
+                    let txTotalCost = rawAmount + fee;
+                    currentShares += tx.shares;
+                    totalCost += txTotalCost;
+                } else if (tx.type === 'sell') {
+                    let tax = Math.round(rawAmount * taxRate);
+                    let netRevenue = rawAmount - fee - tax;
+                    let avgCostBeforeSell = currentShares > 0 ? totalCost / currentShares : 0;
+                    let costOfSoldShares = avgCostBeforeSell * tx.shares;
+                    
+                    let realizedPL = netRevenue - costOfSoldShares;
+                    totalRealizedPL += realizedPL;
+
+                    totalCost -= costOfSoldShares;
+                    currentShares -= tx.shares;
+
+                    if (currentShares < 0) currentShares = 0;
+                    if (totalCost < 0) totalCost = 0;
+
+                    rowRealizedPLText = `<span class="${realizedPL >= 0 ? 'text-emerald-600' : 'text-rose-600'}">$${Math.round(realizedPL).toLocaleString()}</span>`;
+                }
+
+                const realizedElem = document.getElementById(`row-realized-${index}`);
+                if (realizedElem) realizedElem.innerHTML = rowRealizedPLText;
+
+                let currentAvg = currentShares > 0 ? totalCost / currentShares : 0;
+                chartLabels.push(`#${index + 1}`);
+                chartData.push(currentAvg.toFixed(2));
+            });
+
+            const currentAvgPrice = currentShares > 0 ? totalCost / currentShares : 0;
+
+            // 同步更新手機與電腦版的摘要數值
+            document.getElementById('totalSharesMob').innerText = currentShares.toLocaleString() + ' 股';
+            document.getElementById('totalSharesDesk').innerText = currentShares.toLocaleString() + ' 股';
+            document.getElementById('totalCostMob').innerText = '$' + Math.round(totalCost).toLocaleString();
+            document.getElementById('totalCostDesk').innerText = '$' + Math.round(totalCost).toLocaleString();
+            document.getElementById('avgPriceMob').innerText = '$' + currentAvgPrice.toFixed(2);
+            document.getElementById('avgPriceDesk').innerText = '$' + currentAvgPrice.toFixed(2);
+
+            const realizedText = '$' + Math.round(totalRealizedPL).toLocaleString();
+            const realizedColorClass = `text-xs sm:text-sm font-bold ${totalRealizedPL >= 0 ? 'text-emerald-600' : 'text-rose-600'}`;
+            document.getElementById('realizedPLMob').innerText = realizedText;
+            document.getElementById('realizedPLMob').className = realizedColorClass;
+            document.getElementById('realizedPLDesk').innerText = realizedText;
+            document.getElementById('realizedPLDesk').className = realizedColorClass;
+
+            const currentMarketPrice = parseFloat(document.getElementById('currentMarketPriceMob').value) || 0;
+            const marketRawVal = currentShares * currentMarketPrice;
+            const marketFee = Math.max(1, Math.round(marketRawVal * feeRate * feeDiscount));
+            const marketTax = Math.round(marketRawVal * taxRate);
+            const estimatedNetVal = marketRawVal - marketFee - marketTax;
+            
+            const unrealizedPL = estimatedNetVal - totalCost;
+            const unrealizedPLPercent = totalCost > 0 ? (unrealizedPL / totalCost) * 100 : 0;
+
+            const unrealizedText = `$${Math.round(unrealizedPL).toLocaleString()} (${unrealizedPLPercent.toFixed(1)}%)`;
+            const unrealizedColorClass = `text-xs sm:text-sm font-bold ${unrealizedPL >= 0 ? 'text-emerald-600' : 'text-rose-600'}`;
+            document.getElementById('unrealizedPLMob').innerText = unrealizedText;
+            document.getElementById('unrealizedPLMob').className = unrealizedColorClass;
+            document.getElementById('unrealizedPLDesk').innerText = unrealizedText;
+            document.getElementById('unrealizedPLDesk').className = unrealizedColorClass;
+
+            // 模擬加碼與賣出情境文字
+            const simAddPrice = parseFloat(document.getElementById('simAddPrice').value) || 0;
+            const simAddShares = parseFloat(document.getElementById('simAddShares').value) || 0;
+            const targetSellPrice = parseFloat(document.getElementById('targetSellPrice').value) || 0;
+            
+            const addSimulationText = document.getElementById('addSimulationText');
+            const sellSimulationText = document.getElementById('sellSimulationText');
+
+            if (simAddPrice > 0 && simAddShares > 0) {
+                const simRaw = simAddPrice * simAddShares;
+                const simFee = Math.max(1, Math.round(simRaw * feeRate * feeDiscount));
+                const simAddTotalCost = simRaw + simFee;
+
+                const newTotalShares = currentShares + simAddShares;
+                const newTotalCost = totalCost + simAddTotalCost;
+                const newAvgPrice = newTotalShares > 0 ? newTotalCost / newTotalShares : 0;
+
+                let postAddValuationText = '';
+                if (targetSellPrice > 0) {
+                    const postRawVal = newTotalShares * targetSellPrice;
+                    const postFee = Math.max(1, Math.round(postRawVal * feeRate * feeDiscount));
+                    const postTax = Math.round(postRawVal * taxRate);
+                    const postNetVal = postRawVal - postFee - postTax;
+                    const postAddUnrealizedPL = postNetVal - newTotalCost;
+                    const postAddROI = (postAddUnrealizedPL / newTotalCost) * 100;
+                    const plColorClass = postAddUnrealizedPL >= 0 ? 'text-emerald-600' : 'text-rose-600';
+                    postAddValuationText = `<br>📊 <b>加碼後目標評估</b>（$${targetSellPrice} 賣出）：預期未實現 <b class="${plColorClass}">$${Math.round(postAddUnrealizedPL).toLocaleString()} (${postAddROI.toFixed(1)}%)</b>`;
+                }
+
+                addSimulationText.innerHTML = `🎯 <b>加碼模擬</b>：以 <b>$${simAddPrice}</b> 加碼 <b>${simAddShares.toLocaleString()} 股</b>：<br>` +
+                    `🔹 新總成本：<b>$${Math.round(newTotalCost).toLocaleString()}</b> | 新均價：<b class="text-indigo-700">$${newAvgPrice.toFixed(2)}</b>` +
+                    postAddValuationText;
+            } else {
+                addSimulationText.innerHTML = `✨ 請輸入有效的加碼價格與股數。`;
+            }
+
+            if (targetSellPrice > 0 && currentShares > 0) {
+                const targetRawRev = currentShares * targetSellPrice;
+                const targetFee = Math.max(1, Math.round(targetRawRev * feeRate * feeDiscount));
+                const targetTax = Math.round(targetRawRev * taxRate);
+                const targetNetRev = targetRawRev - targetFee - targetTax;
+                const expectedProfit = targetNetRev - totalCost;
+                const expectedROI = (expectedProfit / totalCost) * 100;
+                sellSimulationText.innerHTML = `💡 現有持股以 <b>$${targetSellPrice}</b> 全數賣出，預期淨損益：<b class="${expectedProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}">$${Math.round(expectedProfit).toLocaleString()} (${expectedROI.toFixed(1)}%)</b>`;
+            } else {
+                sellSimulationText.innerHTML = `💡 目前無現有持股可供賣出模擬。`;
+            }
+
+            const targetBreakEvenPrice = parseFloat(document.getElementById('targetBreakEvenPrice').value) || 0;
+            const targetBuyPrice = parseFloat(document.getElementById('targetBuyPrice').value) || 0;
+            const breakEvenSimulationText = document.getElementById('breakEvenSimulationText');
+
+            if (currentShares > 0 && targetBreakEvenPrice > 0 && targetBuyPrice > 0) {
+                if (targetBuyPrice >= targetBreakEvenPrice) {
+                    breakEvenSimulationText.innerHTML = `⚠️ 買入價需低於目標均價才能降低均價。`;
+                } else if (currentAvgPrice <= targetBreakEvenPrice) {
+                    breakEvenSimulationText.innerHTML = `✨ 目前現有均價已低於或等於目標均價。`;
+                } else {
+                    const requiredShares = (currentShares * (currentAvgPrice - targetBreakEvenPrice)) / (targetBreakEvenPrice - targetBuyPrice);
+                    const roundedShares = Math.ceil(requiredShares); 
+                    const reqRaw = roundedShares * targetBuyPrice;
+                    const reqFee = Math.max(1, Math.round(reqRaw * feeRate * feeDiscount));
+                    
+                    breakEvenSimulationText.innerHTML = `🎯 降至 <b>$${targetBreakEvenPrice}</b> 需買進 <b class="text-emerald-700">${roundedShares.toLocaleString()} 股</b>（約 ${Math.ceil(roundedShares / 1000)} 張），需準備資金 <b>$${Math.round(reqRaw + reqFee).toLocaleString()}</b>。`;
+                }
+            } else {
+                breakEvenSimulationText.innerHTML = `🎯 請輸入目標均價與買入價格。`;
+            }
+
+            updateCharts(chartLabels, chartData);
+        }
+
+        function updateCharts(labels, data) {
+            // 更新電腦版圖表
+            const ctxDesk = document.getElementById('costChartDesk').getContext('2d');
+            if (chartInstanceDesk) chartInstanceDesk.destroy();
+            chartInstanceDesk = new Chart(ctxDesk, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '成本均價',
+                        data: data,
+                        borderColor: '#4f46e5',
+                        backgroundColor: 'rgba(79, 70, 229, 0.05)',
+                        borderWidth: 2.5,
+                        fill: true,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: false, grid: { color: '#f1f5f9' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+
+            // 更新手機版圖表
+            const ctxMob = document.getElementById('costChartMob').getContext('2d');
+            if (chartInstanceMob) chartInstanceMob.destroy();
+            chartInstanceMob = new Chart(ctxMob, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '成本均價',
+                        data: data,
+                        borderColor: '#4f46e5',
+                        backgroundColor: 'rgba(79, 70, 229, 0.05)',
+                        borderWidth: 2.5,
+                        fill: true,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: false, grid: { color: '#f1f5f9' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
